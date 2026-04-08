@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "dist-electron/main.js",
   "scripts": {
+    "postinstall": "npx @electron/rebuild -f -w node-pty",
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && tsc -p tsconfig.electron.json && electron .\"",
     "dev:web": "vite",
     "build:renderer": "tsc && vite build",
@@ -13,11 +14,15 @@
     "dist": "npm run build && electron-builder",
     "serve": "node web-server/server.js"
   },
-  "keywords": ["ide", "openclaw", "ai", "code-editor"],
+  "keywords": [
+    "ide",
+    "openclaw",
+    "ai",
+    "code-editor"
+  ],
   "author": "NestCode",
   "license": "MIT",
   "description": "AI-native IDE powered by OpenClaw",
-  "type": "module",
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@xterm/addon-fit": "^0.11.0",
@@ -37,6 +42,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/ssh2": "^1.15.5",
