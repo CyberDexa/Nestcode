@@ -1,0 +1,25 @@
+{
+  "appId": "com.nestcode.ide",
+  "productName": "NestCode",
+  "directories": {
+    "output": "out"
+  },
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*",
+    "node_modules/**/*",
+    "!node_modules/.cache"
+  ],
+  "mac": {
+    "category": "public.app-category.developer-tools",
+    "target": ["dmg", "zip"],
+    "icon": "public/icon.icns"
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "category": "Development"
+  },
+  "win": {
+    "target": ["nsis", "portable"]
+  }
+}

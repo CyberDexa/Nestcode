@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --nest-primary: #00D4AA;
+  --nest-glow: rgba(0, 212, 170, 0.25);
+  --surface-0: #0A0A0F;
+  --surface-1: #0F0F17;
+  --surface-2: #14141F;
+  --surface-3: #1A1A27;
+  --titlebar-height: 38px;
+  --sidebar-width: 260px;
+  --chat-width: 360px;
+  --statusbar-height: 28px;
+  --activity-bar-width: 48px;
+  --panel-min-height: 180px;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-surface-0 text-text-primary font-sans antialiased;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  height: 100vh;
+  user-select: none;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Selection */
+::selection {
+  background: rgba(0, 212, 170, 0.25);
+  color: #fff;
+}
+
+/* Glass morphism */
+@layer components {
+  .glass-panel {
+    @apply backdrop-blur-lg border border-border-subtle;
+    background: rgba(15, 15, 23, 0.85);
+  }
+  
+  .glass-tooltip {
+    @apply backdrop-blur-md border border-border;
+    background: rgba(26, 26, 39, 0.95);
+  }
+}
+
+/* Panel resize handles */
+.resize-handle {
+  @apply relative z-10;
+  transition: background 0.15s ease;
+}
+
+.resize-handle:hover,
+.resize-handle:active {
+  background: var(--nest-primary) !important;
+}
+
+/* Activity bar item active indicator */
+.activity-indicator {
+  position: absolute;
+  left: 0;
+  width: 2px;
+  height: 20px;
+  background: var(--nest-primary);
+  border-radius: 0 2px 2px 0;
+  transition: all 0.15s ease;
+}
+
+/* Titlebar draggable region */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Code editor overrides */
+.monaco-editor .margin,
+.monaco-editor .minimap {
+  background: transparent !important;
+}
+
+/* xterm customizations */
+.xterm {
+  padding: 8px 12px;
+}
+
+.xterm-viewport::-webkit-scrollbar {
+  width: 6px;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
