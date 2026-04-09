@@ -59,6 +59,38 @@ function extractText(msg: unknown): string {
   return '';
 }
 
+// ── IDE Context formatting for agentic messages ──────────────────────────────
+function formatContextBlock(ctx?: Record<string, unknown>): string {
+  if (!ctx || Object.keys(ctx).length === 0) return '';
+  const parts: string[] = [];
+  if (ctx.workspace) {
+    parts.push(`<workspace>${ctx.workspace}</workspace>`);
+  }
+  if (Array.isArray(ctx.openFiles) && ctx.openFiles.length > 0) {
+    parts.push(`<open_files>\n${(ctx.openFiles as string[]).join('\n')}\n</open_files>`);
+  }
+  if (ctx.activeFile) {
+    const lang = (ctx.activeFileLanguage as string) || '';
+    parts.push(`<active_file path="${ctx.activeFile}" language="${lang}">`);
+    if (ctx.activeFileContent) {
+      const content = String(ctx.activeFileContent).slice(0, 12_000);
+      parts.push('```' + lang + '\n' + content + '\n```');
+    }
+    parts.push('</active_file>');
+  }
+  if (ctx.selection) {
+    const sel = ctx.selection as { text: string; startLine?: number; endLine?: number };
+    parts.push(`<selection lines="${sel.startLine ?? '?'}-${sel.endLine ?? '?'}">\n${sel.text}\n</selection>`);
+  }
+  if (ctx.terminalOutput) {
+    parts.push(`<terminal_output>\n${String(ctx.terminalOutput).slice(-3000)}\n</terminal_output>`);
+  }
+  if (Array.isArray(ctx.diagnostics) && ctx.diagnostics.length > 0) {
+    parts.push(`<diagnostics>\n${(ctx.diagnostics as string[]).join('\n')}\n</diagnostics>`);
+  }
+  return parts.length > 0 ? '<ide_context>\n' + parts.join('\n') + '\n</ide_context>' : '';
+}
+
 // ── WebSocket RPC client class ────────────────────────────────────────────────
 class OpenClawWsClient {
   private ws: WebSocket | null = null;
@@ -401,11 +433,19 @@ export function registerOpenClawHandlers() {
     const wsUrl = toWsUrl(baseUrl);
     const c = new OpenClawWsClient(wsUrl, token);
 
-    // Forward all chat events to renderer windows
+    // Forward events to renderer windows
     c.setEventCallback((event, payload) => {
+      const windows = BrowserWindow.getAllWindows();
+
+      // Forward tool/agent events to renderer for display
+      if (event !== 'chat' && event !== 'connect.challenge') {
+        windows.forEach((w) =>
+          w.webContents.send('openclaw:toolEvent', event, payload)
+        );
+      }
+
       if (event !== 'chat') return;
       const chatPayload = payload as ChatEventPayload;
-      const windows = BrowserWindow.getAllWindows();
 
       if (chatPayload.state === 'delta') {
         const chunk = extractText(chatPayload.message);
@@ -484,20 +524,22 @@ export function registerOpenClawHandlers() {
     'openclaw:sendMessage',
     async (
       event,
-      _sessionId: string,  // kept for API compat; we always use 'main'
+      _sessionId: string,
       message: string,
-      _context?: Record<string, unknown>
+      context?: Record<string, unknown>
     ) => {
       if (!client?.isOpen()) throw new Error('Not connected to OpenClaw gateway');
 
       const win = BrowserWindow.fromWebContents(event.sender);
 
-      // chat events stream back asynchronously via the event callback set above.
-      // We just need to fire the request and let it resolve (runId returned).
+      // Enrich message with IDE context (active file, workspace, terminal output, etc.)
+      const contextBlock = formatContextBlock(context);
+      const enrichedMessage = contextBlock ? contextBlock + '\n\n' + message : message;
+
       try {
         await client.request('chat.send', {
           sessionKey: 'main',
-          message,
+          message: enrichedMessage,
           deliver: false,
           idempotencyKey: randomUUID(),
         });

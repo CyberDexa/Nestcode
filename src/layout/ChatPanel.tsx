@@ -5,6 +5,25 @@ import { useFileStore } from '../store/fileStore';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+declare global {
+  interface Window {
+    nestcode?: {
+      openclawCreateSession: (workspacePath: string) => Promise<string | null>;
+      openclawSendMessage: (sessionId: string, message: string, context?: Record<string, unknown>) => Promise<void>;
+      onOpenClawMessage: (cb: (sessionId: string, chunk: string, done: boolean) => void) => () => void;
+      onOpenClawToolEvent?: (cb: (event: string, payload: unknown) => void) => () => void;
+      getTerminalBuffer?: (id?: string) => Promise<string>;
+      terminalExec?: (command: string, cwd?: string) => Promise<string>;
+      writeFile: (filePath: string, content: string) => Promise<void>;
+      readFile: (filePath: string) => Promise<string>;
+      createDir: (dirPath: string) => Promise<void>;
+      terminalCreate: (cwd?: string) => Promise<string>;
+      terminalWrite: (id: string, data: string) => Promise<void>;
+      [key: string]: unknown;
+    };
+  }
+}
+
 export function ChatPanel() {
   const { messages, isStreaming, status, sessionId } = useChatStore();
   const [input, setInput] = useState('');
@@ -14,6 +33,15 @@ export function ChatPanel() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Listen for OpenClaw tool events (bash, file edits, etc.)
+  useEffect(() => {
+    if (!window.nestcode?.onOpenClawToolEvent) return;
+    const unsub = window.nestcode.onOpenClawToolEvent((event, payload) => {
+      useChatStore.getState().addToolEvent(event, payload);
+    });
+    return unsub;
+  }, []);
 
   const sendMessage = async () => {
     if (!input.trim() || isStreaming) return;
@@ -46,15 +74,27 @@ export function ChatPanel() {
     // Add assistant placeholder
     const assistantId = addMessage({ role: 'assistant', content: '', isStreaming: true });
 
-    // Build context
-    const activeTab = useEditorStore.getState().tabs.find(
-      (t) => t.id === useEditorStore.getState().activeTabId
+    // Build rich IDE context for agentic coding
+    const editorState = useEditorStore.getState();
+    const activeTab = editorState.tabs.find(
+      (t) => t.id === editorState.activeTabId
     );
 
-    const context = {
+    let terminalOutput: string | undefined;
+    if (window.nestcode?.getTerminalBuffer) {
+      try {
+        const buf = await window.nestcode.getTerminalBuffer();
+        if (buf?.trim()) terminalOutput = buf;
+      } catch { /* ignore */ }
+    }
+
+    const context: Record<string, unknown> = {
       activeFile: activeTab?.filePath,
-      activeFileContent: activeTab?.content?.slice(0, 5000),
+      activeFileContent: activeTab?.content,
+      activeFileLanguage: activeTab?.language,
+      openFiles: editorState.tabs.map((t) => t.filePath),
       workspace: useFileStore.getState().rootPath,
+      terminalOutput,
     };
 
     if (window.nestcode && sid) {
@@ -216,12 +256,158 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             )}
           </div>
         )}
-        <div className="prose prose-invert prose-xs max-w-none [&_pre]:bg-surface-0 [&_pre]:border [&_pre]:border-border-subtle [&_pre]:rounded-lg [&_pre]:p-3 [&_code]:text-nest-300 [&_code]:text-[11px] [&_code]:font-mono">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        <div className="prose prose-invert prose-xs max-w-none [&_code]:text-nest-300 [&_code]:text-[11px] [&_code]:font-mono">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              pre({ children }) {
+                return <>{children}</>;
+              },
+              code({ className, children, ...props }: any) {
+                const text = String(children).replace(/\n$/, '');
+                const langMatch = /language-(\w+)/.exec(className || '');
+                if (langMatch || text.includes('\n')) {
+                  return <CodeBlockWithActions code={text} lang={langMatch?.[1] || ''} />;
+                }
+                return (
+                  <code className="bg-surface-0/50 px-1 py-0.5 rounded" {...props}>
+                    {children}
+                  </code>
+                );
+              },
+            }}
+          >
             {message.content || (message.isStreaming ? '...' : '')}
           </ReactMarkdown>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Code block with Apply / Copy / Run action buttons ─────────────────────────
+function CodeBlockWithActions({ code, lang }: { code: string; lang: string }) {
+  const [copied, setCopied] = useState(false);
+  const [applied, setApplied] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [runOutput, setRunOutput] = useState<string | null>(null);
+
+  // Detect file path from first-line comment like "// file: src/main.ts"
+  const lines = code.split('\n');
+  const firstLine = lines[0]?.trim() || '';
+  const pathMatch = firstLine.match(
+    /^(?:\/\/|#|--|\/\*)\s*(?:file|path|filename):\s*(.+?)(?:\s*\*\/)?$/i
+  );
+  const detectedPath = pathMatch?.[1]?.trim() || null;
+
+  const rootPath = useFileStore.getState().rootPath;
+  const editorState = useEditorStore.getState();
+  const activeTab = editorState.tabs.find((t) => t.id === editorState.activeTabId);
+
+  const targetFile = detectedPath
+    ? detectedPath.startsWith('/')
+      ? detectedPath
+      : rootPath
+        ? `${rootPath}/${detectedPath}`
+        : detectedPath
+    : activeTab?.filePath || null;
+
+  const targetName = detectedPath
+    ? detectedPath.split('/').pop()
+    : activeTab?.fileName;
+
+  const isShell = ['bash', 'sh', 'shell', 'zsh', 'terminal', 'console', 'cmd'].includes(lang);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* noop */ }
+  };
+
+  const handleApply = async () => {
+    if (!targetFile || !window.nestcode) return;
+    try {
+      const contentToWrite = detectedPath ? lines.slice(1).join('\n') : code;
+      const dir = targetFile.substring(0, targetFile.lastIndexOf('/'));
+      if (dir) {
+        try { await window.nestcode.createDir(dir); } catch { /* exists */ }
+      }
+      await window.nestcode.writeFile(targetFile, contentToWrite);
+      // Refresh editor tab if open
+      const es = useEditorStore.getState();
+      const tab = es.tabs.find((t) => t.filePath === targetFile);
+      if (tab) {
+        es.updateContent(tab.id, contentToWrite);
+        es.markSaved(tab.id);
+      } else {
+        es.openFile(targetFile, contentToWrite);
+      }
+      setApplied(true);
+      setTimeout(() => setApplied(false), 3000);
+    } catch { /* noop */ }
+  };
+
+  const handleRun = async () => {
+    if (!window.nestcode?.terminalExec) return;
+    setRunning(true);
+    setRunOutput(null);
+    try {
+      const cwd = useFileStore.getState().rootPath || undefined;
+      const output = await window.nestcode.terminalExec(code, cwd);
+      setRunOutput(output.slice(0, 5000));
+    } catch (err) {
+      setRunOutput(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="my-2 rounded-lg border border-border-subtle overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-surface-0 border-b border-border-subtle">
+        <span className="text-2xs text-text-muted font-mono">
+          {lang || 'code'}{targetName ? ` · ${targetName}` : ''}
+        </span>
+        <div className="flex gap-1">
+          <button
+            onClick={handleCopy}
+            className="px-2 py-0.5 text-2xs bg-surface-2 text-text-secondary rounded hover:bg-surface-3 transition-colors"
+          >
+            {copied ? '✓' : 'Copy'}
+          </button>
+          {targetFile && (
+            <button
+              onClick={handleApply}
+              className="px-2 py-0.5 text-2xs bg-nest/20 text-nest rounded hover:bg-nest/30 transition-colors"
+            >
+              {applied ? '✓ Applied' : 'Apply'}
+            </button>
+          )}
+          {isShell && (
+            <button
+              onClick={handleRun}
+              disabled={running}
+              className="px-2 py-0.5 text-2xs bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 transition-colors disabled:opacity-50"
+            >
+              {running ? '...' : '▶ Run'}
+            </button>
+          )}
+        </div>
+      </div>
+      <pre className="p-3 bg-surface-0 overflow-x-auto m-0">
+        <code className={`text-[11px] font-mono text-nest-300 ${lang ? `language-${lang}` : ''}`}>
+          {code}
+        </code>
+      </pre>
+      {runOutput !== null && (
+        <div className="border-t border-border-subtle">
+          <pre className="p-2 bg-surface-0/50 text-[10px] text-text-muted font-mono max-h-40 overflow-auto m-0 whitespace-pre-wrap">
+            {runOutput || '(no output)'}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }

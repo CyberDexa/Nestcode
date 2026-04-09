@@ -61,6 +61,10 @@ const api = {
     ipcRenderer.on('terminal:data', handler);
     return () => ipcRenderer.removeListener('terminal:data', handler);
   },
+  getTerminalBuffer: (id?: string): Promise<string> =>
+    ipcRenderer.invoke('terminal:getBuffer', id),
+  terminalExec: (command: string, cwd?: string): Promise<string> =>
+    ipcRenderer.invoke('terminal:exec', command, cwd),
 
   // ──── Git ────
   gitStatus: (repoPath: string): Promise<GitStatus> =>
@@ -101,6 +105,11 @@ const api = {
     const handler = (_: unknown, status: OpenClawStatus) => callback(status);
     ipcRenderer.on('openclaw:status', handler);
     return () => ipcRenderer.removeListener('openclaw:status', handler);
+  },
+  onOpenClawToolEvent: (callback: (event: string, payload: unknown) => void) => {
+    const handler = (_: unknown, event: string, payload: unknown) => callback(event, payload);
+    ipcRenderer.on('openclaw:toolEvent', handler);
+    return () => ipcRenderer.removeListener('openclaw:toolEvent', handler);
   },
 
   // ──── Window ────

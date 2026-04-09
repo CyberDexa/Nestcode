@@ -8,10 +8,18 @@ export type ChatMessage = {
   isStreaming?: boolean;
 };
 
+export type ToolEvent = {
+  id: string;
+  event: string;
+  payload: unknown;
+  timestamp: number;
+};
+
 type OpenClawStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 type ChatStore = {
   messages: ChatMessage[];
+  toolEvents: ToolEvent[];
   sessionId: string | null;
   isStreaming: boolean;
   status: OpenClawStatus;
@@ -20,6 +28,7 @@ type ChatStore = {
   addMessage: (msg: Omit<ChatMessage, 'id' | 'timestamp'>) => string;
   appendToMessage: (id: string, chunk: string) => void;
   finishStreaming: (id: string) => void;
+  addToolEvent: (event: string, payload: unknown) => void;
   setSessionId: (id: string | null) => void;
   setIsStreaming: (streaming: boolean) => void;
   setStatus: (status: OpenClawStatus) => void;
@@ -29,6 +38,7 @@ type ChatStore = {
 
 export const useChatStore = create<ChatStore>((set) => ({
   messages: [],
+  toolEvents: [],
   sessionId: null,
   isStreaming: false,
   status: 'disconnected',
@@ -65,6 +75,16 @@ export const useChatStore = create<ChatStore>((set) => ({
   setSessionId: (id) => set({ sessionId: id }),
   setIsStreaming: (streaming) => set({ isStreaming: streaming }),
   setStatus: (status) => set({ status }),
+  addToolEvent: (event, payload) => {
+    const te: ToolEvent = {
+      id: crypto.randomUUID(),
+      event,
+      payload,
+      timestamp: Date.now(),
+    };
+    set((s) => ({ toolEvents: [...s.toolEvents.slice(-50), te] }));
+  },
+
   setGatewayUrl: (url) => set({ gatewayUrl: url }),
-  clearMessages: () => set({ messages: [] }),
+  clearMessages: () => set({ messages: [], toolEvents: [] }),
 }));
