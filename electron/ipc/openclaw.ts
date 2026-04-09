@@ -321,7 +321,19 @@ let client: OpenClawWsClient | null = null;
 let gatewayUrl: string | null = null;
 let authToken: string | null = null;
 let statusInterval: NodeJS.Timeout | null = null;
+// Per-window session tracking — maps webContents.id to sessionKey
+const windowSessions = new Map<number, string>();
+let sessionCounter = 0;
 
+// System prompt sent once per new session to instruct local-IDE mode
+const IDE_SYSTEM_PROMPT =
+  `You are an AI coding assistant working inside NestCode, a local desktop IDE. ` +
+  `The user's project is on their LOCAL machine — NOT on your server. ` +
+  `When you create or edit files, output them as fenced markdown code blocks with a ` +
+  `"// file: path/to/file" comment on the first line so the IDE can apply them locally. ` +
+  `For shell commands, use \`\`\`bash code blocks. ` +
+  `Never write files directly to disk — always produce code blocks for the IDE to apply. ` +
+  `Use paths relative to the project root unless the user specifies absolute paths.`;
 type OpenClawStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 let currentStatus: OpenClawStatus = 'disconnected';
 
@@ -434,35 +446,40 @@ export function registerOpenClawHandlers() {
     const c = new OpenClawWsClient(wsUrl, token);
 
     // Forward events to renderer windows
-    c.setEventCallback((event, payload) => {
-      const windows = BrowserWindow.getAllWindows();
-
-      // Forward tool/agent events to renderer for display
-      if (event !== 'chat' && event !== 'connect.challenge') {
-        windows.forEach((w) =>
-          w.webContents.send('openclaw:toolEvent', event, payload)
+    c.setEventCallback((evtName, payload) => {
+      // Forward tool/agent events to ALL windows
+      if (evtName !== 'chat' && evtName !== 'connect.challenge') {
+        BrowserWindow.getAllWindows().forEach((w) =>
+          w.webContents.send('openclaw:toolEvent', evtName, payload)
         );
       }
 
-      if (event !== 'chat') return;
+      if (evtName !== 'chat') return;
       const chatPayload = payload as ChatEventPayload;
+
+      // Route chat events only to the window that owns this sessionKey
+      const sessionKey = chatPayload.sessionKey || 'main';
+      const targetWindows = BrowserWindow.getAllWindows().filter((w) => {
+        const wSess = windowSessions.get(w.webContents.id);
+        return wSess === sessionKey || (!wSess && sessionKey === 'main');
+      });
 
       if (chatPayload.state === 'delta') {
         const chunk = extractText(chatPayload.message);
         if (chunk) {
-          windows.forEach((w) =>
-            w.webContents.send('openclaw:message', 'main', chunk, false)
+          targetWindows.forEach((w) =>
+            w.webContents.send('openclaw:message', sessionKey, chunk, false)
           );
         }
       } else if (chatPayload.state === 'final') {
-        windows.forEach((w) =>
-          w.webContents.send('openclaw:message', 'main', '', true)
+        targetWindows.forEach((w) =>
+          w.webContents.send('openclaw:message', sessionKey, '', true)
         );
       } else if (chatPayload.state === 'aborted' || chatPayload.state === 'error') {
         const errMsg = chatPayload.errorMessage ?? 'Chat request failed';
-        windows.forEach((w) => {
-          w.webContents.send('openclaw:message', 'main', `\n\n*⚠ ${errMsg}*`, false);
-          w.webContents.send('openclaw:message', 'main', '', true);
+        targetWindows.forEach((w) => {
+          w.webContents.send('openclaw:message', sessionKey, `\n\n*⚠ ${errMsg}*`, false);
+          w.webContents.send('openclaw:message', sessionKey, '', true);
         });
       }
     });
@@ -513,11 +530,25 @@ export function registerOpenClawHandlers() {
     };
   });
 
-  // createSession: OpenClaw uses persistent session keys, not ephemeral IDs.
-  // The default session key is always 'main'.
-  ipcMain.handle('openclaw:createSession', async () => {
+  // createSession: Each window gets its own unique session key.
+  ipcMain.handle('openclaw:createSession', async (event) => {
     if (!client?.isOpen()) return null;
-    return 'main';
+    const wcId = event.sender.id;
+    // Return existing session for this window if already created
+    const existing = windowSessions.get(wcId);
+    if (existing) return existing;
+    const key = `nestcode-${++sessionCounter}-${Date.now()}`;
+    windowSessions.set(wcId, key);
+    return key;
+  });
+
+  // Reset session (new chat) for a specific window
+  ipcMain.handle('openclaw:resetSession', async (event) => {
+    const wcId = event.sender.id;
+    windowSessions.delete(wcId);
+    const key = `nestcode-${++sessionCounter}-${Date.now()}`;
+    windowSessions.set(wcId, key);
+    return key;
   });
 
   ipcMain.handle(
@@ -531,22 +562,30 @@ export function registerOpenClawHandlers() {
       if (!client?.isOpen()) throw new Error('Not connected to OpenClaw gateway');
 
       const win = BrowserWindow.fromWebContents(event.sender);
+      const wcId = event.sender.id;
+      const sessionKey = windowSessions.get(wcId) || 'main';
 
       // Enrich message with IDE context (active file, workspace, terminal output, etc.)
       const contextBlock = formatContextBlock(context);
-      const enrichedMessage = contextBlock ? contextBlock + '\n\n' + message : message;
+      // Prepend system prompt on first message of a session
+      let prefix = contextBlock || '';
+      const isFirst = !(context as Record<string, unknown>)?.['_sessionInitialized'];
+      if (isFirst) {
+        prefix = `<system>\n${IDE_SYSTEM_PROMPT}\n</system>\n\n` + prefix;
+      }
+      const enrichedMessage = prefix ? prefix + '\n\n' + message : message;
 
       try {
         await client.request('chat.send', {
-          sessionKey: 'main',
+          sessionKey,
           message: enrichedMessage,
           deliver: false,
           idempotencyKey: randomUUID(),
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        win?.webContents.send('openclaw:message', 'main', `\n\n*⚠ ${msg}*`, false);
-        win?.webContents.send('openclaw:message', 'main', '', true);
+        win?.webContents.send('openclaw:message', sessionKey, `\n\n*⚠ ${msg}*`, false);
+        win?.webContents.send('openclaw:message', sessionKey, '', true);
         throw err;
       }
     }

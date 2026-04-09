@@ -93,6 +93,8 @@ const api = {
     ipcRenderer.invoke('openclaw:createSession', workspacePath),
   openclawAutoStart: (): Promise<boolean> =>
     ipcRenderer.invoke('openclaw:autoStart'),
+  openclawResetSession: (): Promise<string> =>
+    ipcRenderer.invoke('openclaw:resetSession'),
   openclawGetStatus: (): Promise<{ status: OpenClawStatus; version?: string; gatewayUrl?: string }> =>
     ipcRenderer.invoke('openclaw:getStatus'),
   onOpenClawMessage: (callback: (sessionId: string, chunk: string, done: boolean) => void) => {
@@ -115,6 +117,8 @@ const api = {
   // ──── Window ────
   openFolderDialog: (): Promise<string | null> =>
     ipcRenderer.invoke('dialog:openFolder'),
+  newWindow: (): Promise<void> =>
+    ipcRenderer.invoke('window:new'),
   onOpenFolder: (callback: (folderPath: string) => void) => {
     const handler = (_: unknown, folderPath: string) => callback(folderPath);
     ipcRenderer.on('open-folder', handler);

@@ -5,6 +5,20 @@ import { useLayoutStore } from '../../store/layoutStore';
 let monacoLoaded = false;
 let monacoInstance: typeof import('monaco-editor') | null = null;
 
+// Configure Monaco web workers to suppress console warning
+if (typeof window !== 'undefined') {
+  (window as unknown as Record<string, unknown>).MonacoEnvironment = {
+    getWorker(_moduleId: string, label: string) {
+      // Use a basic worker; Monaco falls back gracefully
+      const blob = new Blob(
+        ['self.onmessage = function() {}'],
+        { type: 'application/javascript' }
+      );
+      return new Worker(URL.createObjectURL(blob), { name: label });
+    },
+  };
+}
+
 async function loadMonaco() {
   if (monacoLoaded) return monacoInstance;
   try {

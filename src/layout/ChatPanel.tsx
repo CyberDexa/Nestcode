@@ -5,30 +5,12 @@ import { useFileStore } from '../store/fileStore';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-declare global {
-  interface Window {
-    nestcode?: {
-      openclawCreateSession: (workspacePath: string) => Promise<string | null>;
-      openclawSendMessage: (sessionId: string, message: string, context?: Record<string, unknown>) => Promise<void>;
-      onOpenClawMessage: (cb: (sessionId: string, chunk: string, done: boolean) => void) => () => void;
-      onOpenClawToolEvent?: (cb: (event: string, payload: unknown) => void) => () => void;
-      getTerminalBuffer?: (id?: string) => Promise<string>;
-      terminalExec?: (command: string, cwd?: string) => Promise<string>;
-      writeFile: (filePath: string, content: string) => Promise<void>;
-      readFile: (filePath: string) => Promise<string>;
-      createDir: (dirPath: string) => Promise<void>;
-      terminalCreate: (cwd?: string) => Promise<string>;
-      terminalWrite: (id: string, data: string) => Promise<void>;
-      [key: string]: unknown;
-    };
-  }
-}
-
 export function ChatPanel() {
   const { messages, isStreaming, status, sessionId } = useChatStore();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const sessionInitRef = useRef(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -37,7 +19,7 @@ export function ChatPanel() {
   // Listen for OpenClaw tool events (bash, file edits, etc.)
   useEffect(() => {
     if (!window.nestcode?.onOpenClawToolEvent) return;
-    const unsub = window.nestcode.onOpenClawToolEvent((event, payload) => {
+    const unsub = window.nestcode.onOpenClawToolEvent((event: string, payload: unknown) => {
       useChatStore.getState().addToolEvent(event, payload);
     });
     return unsub;
@@ -95,7 +77,9 @@ export function ChatPanel() {
       openFiles: editorState.tabs.map((t) => t.filePath),
       workspace: useFileStore.getState().rootPath,
       terminalOutput,
+      _sessionInitialized: sessionInitRef.current,
     };
+    sessionInitRef.current = true;
 
     if (window.nestcode && sid) {
       // Set up listener for streaming response
@@ -167,15 +151,49 @@ export function ChatPanel() {
             </span>
           </div>
         </div>
-        <button
-          onClick={() => useChatStore.getState().clearMessages()}
-          className="text-text-muted hover:text-text-secondary transition-colors"
-          title="Clear chat"
-        >
-          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3 6h18M8 6V4h8v2M5 6v14a2 2 0 002 2h10a2 2 0 002-2V6" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-1">
+          {/* New Chat */}
+          <button
+            onClick={async () => {
+              useChatStore.getState().clearMessages();
+              useChatStore.getState().setSessionId(null);
+              sessionInitRef.current = false;
+              if (window.nestcode?.openclawResetSession) {
+                try {
+                  const newSid = await window.nestcode.openclawResetSession();
+                  useChatStore.getState().setSessionId(newSid);
+                } catch { /* ignore */ }
+              }
+            }}
+            className="text-text-muted hover:text-text-secondary transition-colors p-0.5 rounded hover:bg-surface-3"
+            title="New chat"
+          >
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+          {/* New Window */}
+          <button
+            onClick={() => window.nestcode?.newWindow?.()}
+            className="text-text-muted hover:text-text-secondary transition-colors p-0.5 rounded hover:bg-surface-3"
+            title="New window"
+          >
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <path d="M9 3v18M3 9h6" />
+            </svg>
+          </button>
+          {/* Clear chat */}
+          <button
+            onClick={() => useChatStore.getState().clearMessages()}
+            className="text-text-muted hover:text-text-secondary transition-colors p-0.5 rounded hover:bg-surface-3"
+            title="Clear chat"
+          >
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 6h18M8 6V4h8v2M5 6v14a2 2 0 002 2h10a2 2 0 002-2V6" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -206,22 +224,43 @@ export function ChatPanel() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isStreaming ? 'Waiting for response...' : 'Ask OpenClaw...'}
+            placeholder={isStreaming ? 'Waiting for response...' : 'Ask OpenClaw... (type @file to attach)'}
             disabled={isStreaming}
             rows={1}
-            className="w-full px-3 py-2.5 pr-10 text-xs bg-surface-3 border border-border-subtle rounded-lg text-text-primary placeholder:text-text-muted focus:border-nest/40 focus:outline-none resize-none transition-colors disabled:opacity-50"
+            className="w-full px-3 py-2.5 pr-20 text-xs bg-surface-3 border border-border-subtle rounded-lg text-text-primary placeholder:text-text-muted focus:border-nest/40 focus:outline-none resize-none transition-colors disabled:opacity-50"
             style={{ minHeight: '40px', maxHeight: '120px' }}
           />
-          <button
-            onClick={sendMessage}
-            disabled={!input.trim() || isStreaming}
-            className="absolute right-2 bottom-2 w-7 h-7 flex items-center justify-center rounded-md bg-nest text-surface-0 hover:bg-nest-400 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-          >
-            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M22 2L11 13" />
-              <path d="M22 2L15 22l-4-9-9-4z" />
-            </svg>
-          </button>
+          <div className="absolute right-2 bottom-2 flex items-center gap-1">
+            {/* Insert active file reference */}
+            <button
+              onClick={() => {
+                const tab = useEditorStore.getState().tabs.find(
+                  (t) => t.id === useEditorStore.getState().activeTabId
+                );
+                if (tab) {
+                  const ref = `@${tab.fileName}`;
+                  setInput((prev) => prev + (prev.endsWith(' ') || !prev ? ref : ' ' + ref));
+                  inputRef.current?.focus();
+                }
+              }}
+              className="w-7 h-7 flex items-center justify-center rounded-md text-text-muted hover:text-text-secondary hover:bg-surface-2 transition-all"
+              title="Attach current file"
+            >
+              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+              </svg>
+            </button>
+            <button
+              onClick={sendMessage}
+              disabled={!input.trim() || isStreaming}
+              className="w-7 h-7 flex items-center justify-center rounded-md bg-nest text-surface-0 hover:bg-nest-400 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M22 2L11 13" />
+                <path d="M22 2L15 22l-4-9-9-4z" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>

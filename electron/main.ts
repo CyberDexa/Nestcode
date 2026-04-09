@@ -6,7 +6,7 @@ import { registerTerminalHandlers } from './ipc/terminal';
 import { registerGitHandlers } from './ipc/git';
 import { registerOpenClawHandlers } from './ipc/openclaw';
 
-let mainWindow: BrowserWindow | null = null;
+const allWindows = new Set<BrowserWindow>();
 
 const isDev = !app.isPackaged;
 
@@ -33,8 +33,8 @@ async function waitForVite(): Promise<void> {
   console.warn('Vite dev server did not start in time — loading anyway');
 }
 
-async function createWindow() {
-  mainWindow = new BrowserWindow({
+async function createWindow(): Promise<BrowserWindow> {
+  const win = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 960,
@@ -51,23 +51,22 @@ async function createWindow() {
     },
   });
 
+  allWindows.add(win);
+
   if (isDev) {
     await waitForVite();
-    mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    win.loadURL('http://localhost:5173');
+    // Only open devtools for the first window
+    if (allWindows.size === 1) win.webContents.openDevTools({ mode: 'detach' });
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    win.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
-  });
-
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  win.once('ready-to-show', () => win.show());
+  win.on('closed', () => allWindows.delete(win));
 
   buildMenu();
+  return win;
 }
 
 function buildMenu() {
@@ -93,11 +92,13 @@ function buildMenu() {
           label: 'Open Folder...',
           accelerator: 'CmdOrCtrl+O',
           click: async () => {
-            const result = await dialog.showOpenDialog(mainWindow!, {
+            const focused = BrowserWindow.getFocusedWindow();
+            if (!focused) return;
+            const result = await dialog.showOpenDialog(focused, {
               properties: ['openDirectory'],
             });
             if (!result.canceled && result.filePaths.length > 0) {
-              mainWindow?.webContents.send('open-folder', result.filePaths[0]);
+              focused.webContents.send('open-folder', result.filePaths[0]);
             }
           },
         },
@@ -105,12 +106,18 @@ function buildMenu() {
         {
           label: 'Save',
           accelerator: 'CmdOrCtrl+S',
-          click: () => mainWindow?.webContents.send('save-file'),
+          click: () => BrowserWindow.getFocusedWindow()?.webContents.send('save-file'),
         },
         {
           label: 'Save All',
           accelerator: 'CmdOrCtrl+Shift+S',
-          click: () => mainWindow?.webContents.send('save-all-files'),
+          click: () => BrowserWindow.getFocusedWindow()?.webContents.send('save-all-files'),
+        },
+        { type: 'separator' },
+        {
+          label: 'New Window',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: () => createWindow(),
         },
         { type: 'separator' },
         { role: 'close' },
@@ -168,12 +175,18 @@ app.whenReady().then(async () => {
   registerOpenClawHandlers();
 
   // Open Folder dialog — returns selected path or null
-  ipcMain.handle('dialog:openFolder', async () => {
-    if (!mainWindow) return null;
-    const result = await dialog.showOpenDialog(mainWindow, {
+  ipcMain.handle('dialog:openFolder', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return null;
+    const result = await dialog.showOpenDialog(win, {
       properties: ['openDirectory'],
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+
+  // New Window
+  ipcMain.handle('window:new', async () => {
+    await createWindow();
   });
 
   await createWindow();
