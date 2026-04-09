@@ -457,12 +457,20 @@ export function registerOpenClawHandlers() {
       if (evtName !== 'chat') return;
       const chatPayload = payload as ChatEventPayload;
 
-      // Route chat events only to the window that owns this sessionKey
-      const sessionKey = chatPayload.sessionKey || 'main';
-      const targetWindows = BrowserWindow.getAllWindows().filter((w) => {
-        const wSess = windowSessions.get(w.webContents.id);
-        return wSess === sessionKey || (!wSess && sessionKey === 'main');
-      });
+      // Route chat events only to the window that owns this sessionKey.
+      // If the gateway echoes back an empty/missing sessionKey (some versions don't),
+      // fall back to broadcasting to ALL windows so no response is silently dropped.
+      const sessionKey = chatPayload.sessionKey || '';
+      let targetWindows = sessionKey
+        ? BrowserWindow.getAllWindows().filter((w) => {
+            const wSess = windowSessions.get(w.webContents.id);
+            return wSess === sessionKey;
+          })
+        : [];
+      // Fallback: if no specific window matched, broadcast to all windows
+      if (targetWindows.length === 0) {
+        targetWindows = BrowserWindow.getAllWindows();
+      }
 
       if (chatPayload.state === 'delta') {
         const chunk = extractText(chatPayload.message);
