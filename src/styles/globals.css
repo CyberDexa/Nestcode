@@ -2,19 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --nest-primary: #00D4AA;
-  --nest-glow: rgba(0, 212, 170, 0.25);
-  --surface-0: #0A0A0F;
-  --surface-1: #0F0F17;
-  --surface-2: #14141F;
-  --surface-3: #1A1A27;
+/* ── Dark theme (default) ──────────────────────────────────── */
+:root, [data-theme="dark"] {
+  color-scheme: dark;
+  /* Layout */
   --titlebar-height: 38px;
-  --sidebar-width: 260px;
-  --chat-width: 360px;
   --statusbar-height: 28px;
   --activity-bar-width: 48px;
   --panel-min-height: 180px;
+  /* Nest accent — RGB triplet for Tailwind opacity support */
+  --color-nest: 0 212 170;
+  /* Surface */
+  --color-surface-0: #0A0A0F;
+  --color-surface-1: #0F0F17;
+  --color-surface-2: #14141F;
+  --color-surface-3: #1A1A27;
+  --color-surface-4: #22222F;
+  --color-surface-5: #2A2A37;
+  --color-surface-6: #33333F;
+  /* Text */
+  --color-text-primary: #EEEEF0;
+  --color-text-secondary: #8888A0;
+  --color-text-muted: #555570;
+  --color-text-inverse: #0A0A0F;
+  /* Borders */
+  --color-border-subtle: rgba(255,255,255,0.06);
+  --color-border: rgba(255,255,255,0.10);
+  --color-border-strong: rgba(255,255,255,0.18);
+  /* Scrollbar */
+  --scrollbar-thumb: rgba(255,255,255,0.08);
+  --scrollbar-thumb-hover: rgba(255,255,255,0.15);
+  /* Monaco background */
+  --monaco-bg: #0F0F17;
+}
+
+/* ── Light theme ───────────────────────────────────────────── */
+[data-theme="light"] {
+  color-scheme: light;
+  --color-nest: 0 158 128;
+  --color-surface-0: #F2F2F7;
+  --color-surface-1: #EAEAF2;
+  --color-surface-2: #E2E2EC;
+  --color-surface-3: #D8D8E8;
+  --color-surface-4: #CECED8;
+  --color-surface-5: #C4C4D0;
+  --color-surface-6: #B8B8C8;
+  --color-text-primary: #1A1A2A;
+  --color-text-secondary: #4A4A6A;
+  --color-text-muted: #7A7A99;
+  --color-text-inverse: #F2F2F7;
+  --color-border-subtle: rgba(0,0,0,0.06);
+  --color-border: rgba(0,0,0,0.10);
+  --color-border-strong: rgba(0,0,0,0.18);
+  --scrollbar-thumb: rgba(0,0,0,0.10);
+  --scrollbar-thumb-hover: rgba(0,0,0,0.18);
+  --monaco-bg: #F8F8FC;
 }
 
 html {
@@ -47,12 +89,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--scrollbar-thumb);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--scrollbar-thumb-hover);
 }
 
 ::-webkit-scrollbar-corner {

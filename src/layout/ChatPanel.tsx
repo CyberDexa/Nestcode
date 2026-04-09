@@ -32,11 +32,14 @@ export function ChatPanel() {
       const rootPath = useFileStore.getState().rootPath;
       try {
         sid = await window.nestcode.openclawCreateSession(rootPath || '');
-        setSessionId(sid);
       } catch {
-        addMessage({ role: 'system', content: 'Failed to create session. Is OpenClaw running?' });
-        setIsStreaming(false);
-        return;
+        sid = null;
+      }
+      if (sid) {
+        setSessionId(sid);
+      } else {
+        // No session — fall through to demo mode below
+        sid = null;
       }
     }
 
@@ -68,12 +71,13 @@ export function ChatPanel() {
 
       try {
         await window.nestcode.openclawSendMessage(sid, input.trim(), context);
-      } catch {
+      } catch (err) {
         finishStreaming(assistantId);
-        appendToMessage(assistantId, '\n\n*Error: Failed to get response from OpenClaw*');
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        appendToMessage(assistantId, `\n\n*⚠ Gateway error: ${msg}*`);
       }
-    } else {
-      // Demo mode: simulate response
+    } else if (!window.nestcode) {
+      // Only show demo response when running in a browser (no Electron IPC)
       const demoResponse = `I'm NestCode's AI assistant powered by OpenClaw. I can help you with:\n\n- Writing and editing code\n- Explaining code snippets\n- Debugging issues\n- Generating tests\n\nConnect to an OpenClaw gateway to get started with full AI capabilities.`;
       
       let i = 0;
@@ -87,6 +91,10 @@ export function ChatPanel() {
           clearInterval(interval);
         }
       }, 20);
+    } else {
+      // Electron is available but session/connection not ready
+      finishStreaming(assistantId);
+      appendToMessage(assistantId, '*⚠ Not connected to OpenClaw. Go to Settings and connect to your gateway.*');
     }
   };
 

@@ -79,8 +79,8 @@ const api = {
     ipcRenderer.invoke('git:checkout', repoPath, branch),
 
   // ──── OpenClaw ────
-  openclawConnect: (gatewayUrl: string): Promise<void> =>
-    ipcRenderer.invoke('openclaw:connect', gatewayUrl),
+  openclawConnect: (gatewayUrl: string, token?: string | null): Promise<void> =>
+    ipcRenderer.invoke('openclaw:connect', gatewayUrl, token),
   openclawDisconnect: (): Promise<void> =>
     ipcRenderer.invoke('openclaw:disconnect'),
   openclawSendMessage: (sessionId: string, message: string, context?: Record<string, unknown>): Promise<void> =>
@@ -104,6 +104,8 @@ const api = {
   },
 
   // ──── Window ────
+  openFolderDialog: (): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:openFolder'),
   onOpenFolder: (callback: (folderPath: string) => void) => {
     const handler = (_: unknown, folderPath: string) => callback(folderPath);
     ipcRenderer.on('open-folder', handler);

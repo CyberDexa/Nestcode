@@ -19,6 +19,7 @@ type FileStore = {
   setLoading: (loading: boolean) => void;
   toggleExpanded: (path: string) => void;
   updateChildren: (parentPath: string, children: FileEntry[]) => void;
+  expandPath: (path: string) => void;
 };
 
 export const useFileStore = create<FileStore>((set) => ({
@@ -46,7 +47,11 @@ export const useFileStore = create<FileStore>((set) => ({
       tree: updateChildrenInTree(s.tree, parentPath, children),
     }));
   },
-}));
+  expandPath: (path) => {
+    set((s) => ({
+      tree: setExpandedInTree(s.tree, path, true),
+    }));
+  },}));
 
 function toggleInTree(tree: FileEntry[], targetPath: string): FileEntry[] {
   return tree.map((entry) => {
@@ -56,6 +61,14 @@ function toggleInTree(tree: FileEntry[], targetPath: string): FileEntry[] {
     if (entry.children) {
       return { ...entry, children: toggleInTree(entry.children, targetPath) };
     }
+    return entry;
+  });
+}
+
+function setExpandedInTree(tree: FileEntry[], targetPath: string, expanded: boolean): FileEntry[] {
+  return tree.map((entry) => {
+    if (entry.path === targetPath) return { ...entry, isExpanded: expanded };
+    if (entry.children) return { ...entry, children: setExpandedInTree(entry.children, targetPath, expanded) };
     return entry;
   });
 }

@@ -5,21 +5,30 @@ function getGit(repoPath: string): SimpleGit {
   return simpleGit(repoPath);
 }
 
+function isNotGitRepo(err: unknown): boolean {
+  return err instanceof Error && err.message.includes('not a git repository');
+}
+
 export function registerGitHandlers() {
   ipcMain.handle('git:status', async (_, repoPath: string) => {
-    const git = getGit(repoPath);
-    const status: StatusResult = await git.status();
-    return {
-      modified: status.modified,
-      added: status.created,
-      deleted: status.deleted,
-      renamed: status.renamed.map((r) => r.to),
-      untracked: status.not_added,
-      staged: status.staged,
-      branch: status.current || 'HEAD',
-      ahead: status.ahead,
-      behind: status.behind,
-    };
+    try {
+      const git = getGit(repoPath);
+      const status: StatusResult = await git.status();
+      return {
+        modified: status.modified,
+        added: status.created,
+        deleted: status.deleted,
+        renamed: status.renamed.map((r) => r.to),
+        untracked: status.not_added,
+        staged: status.staged,
+        branch: status.current || 'HEAD',
+        ahead: status.ahead,
+        behind: status.behind,
+      };
+    } catch (err) {
+      if (isNotGitRepo(err)) return null;
+      throw err;
+    }
   });
 
   ipcMain.handle('git:stage', async (_, repoPath: string, files: string[]) => {

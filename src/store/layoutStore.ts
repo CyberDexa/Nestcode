@@ -3,6 +3,13 @@ import { create } from 'zustand';
 type SidebarPanel = 'explorer' | 'git' | 'search' | 'settings';
 type BottomPanel = 'terminal' | 'problems' | 'output';
 
+export type EditorSettings = {
+  fontSize: number;
+  tabSize: number;
+  wordWrap: boolean;
+  minimap: boolean;
+};
+
 type LayoutStore = {
   sidebarOpen: boolean;
   sidebarPanel: SidebarPanel;
@@ -12,6 +19,8 @@ type LayoutStore = {
   sidebarWidth: number;
   chatWidth: number;
   bottomHeight: number;
+  theme: 'dark' | 'light';
+  editorSettings: EditorSettings;
 
   toggleSidebar: () => void;
   setSidebarPanel: (panel: SidebarPanel) => void;
@@ -21,6 +30,8 @@ type LayoutStore = {
   setSidebarWidth: (w: number) => void;
   setChatWidth: (w: number) => void;
   setBottomHeight: (h: number) => void;
+  setTheme: (theme: 'dark' | 'light') => void;
+  setEditorSettings: (settings: Partial<EditorSettings>) => void;
 };
 
 export const useLayoutStore = create<LayoutStore>((set) => ({
@@ -32,6 +43,8 @@ export const useLayoutStore = create<LayoutStore>((set) => ({
   sidebarWidth: 260,
   chatWidth: 360,
   bottomHeight: 220,
+  theme: 'dark',
+  editorSettings: { fontSize: 13, tabSize: 2, wordWrap: false, minimap: true },
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarPanel: (panel) =>
@@ -49,4 +62,8 @@ export const useLayoutStore = create<LayoutStore>((set) => ({
   setSidebarWidth: (w) => set({ sidebarWidth: Math.max(180, Math.min(500, w)) }),
   setChatWidth: (w) => set({ chatWidth: Math.max(280, Math.min(600, w)) }),
   setBottomHeight: (h) => set({ bottomHeight: Math.max(120, Math.min(500, h)) }),
+  setTheme: (theme) => set({ theme }),
+  setEditorSettings: (settings) =>
+    set((s) => ({ editorSettings: { ...s.editorSettings, ...settings } })),
 }));
+

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron';
 import path from 'path';
+import net from 'net';
 import { registerFileSystemHandlers } from './ipc/filesystem';
 import { registerTerminalHandlers } from './ipc/terminal';
 import { registerGitHandlers } from './ipc/git';
@@ -9,7 +10,30 @@ let mainWindow: BrowserWindow | null = null;
 
 const isDev = !app.isPackaged;
 
-function createWindow() {
+function checkViteReady(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let done = false;
+    const finish = (v: boolean) => {
+      if (!done) { done = true; socket.destroy(); resolve(v); }
+    };
+    socket.setTimeout(500);
+    socket.on('connect', () => finish(true));
+    socket.on('timeout', () => finish(false));
+    socket.on('error', () => finish(false));
+    socket.connect(5173, '127.0.0.1');
+  });
+}
+
+async function waitForVite(): Promise<void> {
+  for (let i = 0; i < 40; i++) {
+    if (await checkViteReady()) return;
+    await new Promise(r => setTimeout(r, 500));
+  }
+  console.warn('Vite dev server did not start in time — loading anyway');
+}
+
+async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -28,6 +52,7 @@ function createWindow() {
   });
 
   if (isDev) {
+    await waitForVite();
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
@@ -136,12 +161,22 @@ function buildMenu() {
   Menu.setApplicationMenu(menu);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerFileSystemHandlers();
   registerTerminalHandlers();
   registerGitHandlers();
   registerOpenClawHandlers();
-  createWindow();
+
+  // Open Folder dialog — returns selected path or null
+  ipcMain.handle('dialog:openFolder', async () => {
+    if (!mainWindow) return null;
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+
+  await createWindow();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

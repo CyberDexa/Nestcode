@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { TitleBar } from './layout/TitleBar';
 import { ActivityBar } from './layout/ActivityBar';
 import { Sidebar } from './layout/Sidebar';
@@ -11,8 +11,45 @@ import { useFileStore } from './store/fileStore';
 import { useChatStore } from './store/chatStore';
 
 export default function App() {
-  const { sidebarOpen, chatPanelOpen, bottomPanelOpen, sidebarWidth, chatWidth, bottomHeight } =
+  const { sidebarOpen, chatPanelOpen, bottomPanelOpen, sidebarWidth, chatWidth, bottomHeight, setBottomHeight, theme } =
     useLayoutStore();
+
+  // Sync theme to DOM
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  // ── Bottom pane drag-to-resize ─────────────────────────────────────────────
+  const isDraggingBottom = useRef(false);
+  const dragStartY = useRef(0);
+  const dragStartHeight = useRef(0);
+
+  const handleBottomResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    isDraggingBottom.current = true;
+    dragStartY.current = e.clientY;
+    dragStartHeight.current = bottomHeight;
+    document.body.style.cursor = 'row-resize';
+    e.preventDefault();
+  }, [bottomHeight]);
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDraggingBottom.current) return;
+      const delta = dragStartY.current - e.clientY;
+      setBottomHeight(dragStartHeight.current + delta);
+    };
+    const onMouseUp = () => {
+      if (!isDraggingBottom.current) return;
+      isDraggingBottom.current = false;
+      document.body.style.cursor = '';
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [setBottomHeight]);
 
   // Listen for folder open from Electron menu
   useEffect(() => {
@@ -90,7 +127,7 @@ export default function App() {
               className="flex-shrink-0 border-t border-border-subtle bg-surface-1"
               style={{ height: bottomHeight }}
             >
-              <BottomPane />
+              <BottomPane onResizeMouseDown={handleBottomResizeMouseDown} />
             </div>
           )}
         </div>
