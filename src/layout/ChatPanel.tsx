@@ -91,10 +91,10 @@ export function ChatPanel() {
     sessionInitRef.current = true;
 
     if (window.nestcode && sid) {
-      // Accept messages matching our session key, OR messages with no session key
-      // (some gateway versions don't echo sessionKey back in the event payload).
-      const unsub = window.nestcode.onOpenClawMessage((msgSessionId: string, chunk: string, done: boolean) => {
-        if (msgSessionId && msgSessionId !== sid) return;
+      // Accept all incoming messages — the main process already routes events
+      // to the correct window. Gateway session keys (e.g. 'agent:main:main') don't
+      // match our local session IDs, so we can't filter on them.
+      const unsub = window.nestcode.onOpenClawMessage((_msgSessionId: string, chunk: string, done: boolean) => {
         if (done) {
           finishStreaming(assistantId);
           unsub();

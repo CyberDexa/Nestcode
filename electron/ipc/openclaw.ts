@@ -212,6 +212,8 @@ class OpenClawWsClient {
           return;
         }
 
+        console.log('[ws] INBOUND:', JSON.stringify(msg).slice(0, 600));
+
         // Server may challenge us before we time out — respond immediately
         if (msg.type === 'event' && (msg as WsEvent).event === 'connect.challenge') {
           sendConnect();
@@ -447,6 +449,7 @@ export function registerOpenClawHandlers() {
 
     // Forward events to renderer windows
     c.setEventCallback((evtName, payload) => {
+      console.log('[openclaw] EVENT received:', evtName, JSON.stringify(payload).slice(0, 500));
       // Forward tool/agent events to ALL windows
       if (evtName !== 'chat' && evtName !== 'connect.challenge') {
         BrowserWindow.getAllWindows().forEach((w) =>
@@ -474,6 +477,7 @@ export function registerOpenClawHandlers() {
 
       if (chatPayload.state === 'delta') {
         const chunk = extractText(chatPayload.message);
+        console.log('[openclaw] DELTA chunk extracted:', JSON.stringify(chunk).slice(0, 200), 'raw msg:', JSON.stringify(chatPayload.message).slice(0, 300));
         if (chunk) {
           targetWindows.forEach((w) =>
             w.webContents.send('openclaw:message', sessionKey, chunk, false)
@@ -571,7 +575,9 @@ export function registerOpenClawHandlers() {
 
       const win = BrowserWindow.fromWebContents(event.sender);
       const wcId = event.sender.id;
-      const sessionKey = windowSessions.get(wcId) || 'main';
+      // Use 'main' as the session key — the gateway maps this to 'agent:main:main'
+      // for webchat clients. Custom session keys are not recognized by the gateway.
+      const sessionKey = 'main';
 
       // Enrich message with IDE context (active file, workspace, terminal output, etc.)
       const contextBlock = formatContextBlock(context);
@@ -583,14 +589,17 @@ export function registerOpenClawHandlers() {
       }
       const enrichedMessage = prefix ? prefix + '\n\n' + message : message;
 
+      console.log('[openclaw] SENDING chat.send with sessionKey:', sessionKey, 'message length:', enrichedMessage.length);
       try {
-        await client.request('chat.send', {
+        const sendResult = await client.request('chat.send', {
           sessionKey,
           message: enrichedMessage,
           deliver: false,
           idempotencyKey: randomUUID(),
         });
+        console.log('[openclaw] chat.send resolved:', JSON.stringify(sendResult).slice(0, 500));
       } catch (err) {
+        console.error('[openclaw] chat.send ERROR:', err);
         const msg = err instanceof Error ? err.message : String(err);
         win?.webContents.send('openclaw:message', sessionKey, `\n\n*⚠ ${msg}*`, false);
         win?.webContents.send('openclaw:message', sessionKey, '', true);
