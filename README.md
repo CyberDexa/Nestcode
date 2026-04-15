@@ -1,6 +1,6 @@
 # NestCode
 
-A lightweight Electron-based IDE with an integrated AI chat panel powered by [OpenClaw](https://openclaw.ai).
+A lightweight Electron-based IDE with an integrated AI chat panel powered by [OpenClaw](https://openclaw.ai)..
 
 ---
 
